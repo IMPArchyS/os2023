@@ -273,7 +273,7 @@ clean:
 	mkfs/mkfs .gdbinit \
         $U/usys.S \
 	$(UPROGS) \
-	lab.zip \
+	*.zip \
 	ph barrier
 
 # try to generate a unique GDB port
