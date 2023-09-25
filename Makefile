@@ -173,6 +173,8 @@ mkfs/mkfs: mkfs/mkfs.c $K/fs.h $K/param.h
 
 UPROGS=\
 	$U/_primes\
+    $U/_find\
+	$U/_primes\
 	$U/_sleep\
 	$U/_pingpong\
 	$U/_cat\

@@ -13,7 +13,7 @@ int main(int argc, char** argv)
   int tick = atoi(argv[1]);
   if (tick < 0) 
   {
-    fprintf(2, "sleep invalid arg");
+    fprintf(2, "sleep [arg] error!\n");
     exit(1);
   }
 
