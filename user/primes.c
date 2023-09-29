@@ -2,6 +2,7 @@
 #include "kernel/stat.h"
 #include "user/user.h"
 
+// function that takes in a number and checks if its a prime number
 int isPrime(int n)
 {
     if (n <= 1) return 0;
@@ -13,8 +14,10 @@ int isPrime(int n)
 
     return 1;    
 }
+
 int main(int argc, char** argv)
 {
+    // check for edge cases and exit if error
     if (argc != 1)
     {
         fprintf(2, "primes error!\n");
@@ -44,7 +47,7 @@ int main(int argc, char** argv)
         int prime;
         while (read(p[0], &prime, sizeof(prime)) > 0)
             printf("prime %d\n", prime);
-
+        
         close(p[0]); 
         wait(0);
         exit(0);

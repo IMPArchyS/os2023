@@ -3,15 +3,18 @@
 #include "user/user.h"
 
 int main(int argc, char** argv)
-{
+{   
+    // check for edge cases and exit if error
     if (argc != 1)
     {
         fprintf(2, "pingpong error!\n");
         exit(1);
     }
-        
+    
+    // create a pipe 
     int p[2];
     pipe(p);
+    // fork the process
     if (fork() == 0) // child
     {
         char buf;
