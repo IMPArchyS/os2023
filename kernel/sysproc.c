@@ -103,3 +103,12 @@ sys_trace(void)
   ps->traceMask = maskID;
   return 0;
 }
+
+// return the square value of num
+int
+sys_square(void)
+{
+  int num;
+  argint(0, &num);
+  return (num*num);
+}
