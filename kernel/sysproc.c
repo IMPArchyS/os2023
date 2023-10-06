@@ -5,6 +5,7 @@
 #include "memlayout.h"
 #include "spinlock.h"
 #include "proc.h"
+#include "sysinfo.h"
 
 uint64
 sys_exit(void)
@@ -111,4 +112,22 @@ sys_square(void)
   int num;
   argint(0, &num);
   return (num*num);
+}
+
+// return the info about free memory and ammount of running processes
+uint64
+sys_sysinfo()
+{
+  uint64 param;
+  argaddr(0, &param);
+  
+  struct sysinfo info;
+  info.freemem = getFreeMemory();
+  info.nproc = getProcessAmount();
+
+  struct proc *p = myproc();
+  if (copyout(p->pagetable, param, (char *)&info, sizeof(info)) < 0)
+    return -1;
+
+  return 0;
 }
