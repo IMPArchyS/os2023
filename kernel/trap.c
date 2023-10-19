@@ -78,17 +78,15 @@ usertrap(void)
   // give up the CPU if this is a timer interrupt.
   if(which_dev == 2)
   {
-    p->ticks++;
-    if (p->interval != 0 && p->alarmActive == 0)
+    if (p->handler != (void (*)()) -1)
     {
-      if (p->deltaT + p->interval <= p->ticks)
+      p->tickCounter++;
+      if (p->tickCounter >= p->alarmInterval && !p->alarmActive)
       {
-        p->deltaT = p->ticks;
-        struct trapframe *tf = kalloc();
-        memmove(tf, p->trapframe, PGSIZE);
-        p->regs = tf;
-        p->trapframe->epc = p->funcPtr;
         p->alarmActive = 1;
+        p->regs = *p->trapframe;
+        p->trapframe->epc = (uint64) p->handler;
+        p->tickCounter = 0;
       }
     }
     yield();

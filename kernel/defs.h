@@ -148,6 +148,8 @@ void            trapinit(void);
 void            trapinithart(void);
 extern struct spinlock tickslock;
 void            usertrapret(void);
+void            saveRegs(struct proc *);
+void            restoreRegs(struct proc *);
 
 // uart.c
 void            uartinit(void);

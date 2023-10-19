@@ -93,20 +93,30 @@ sys_uptime(void)
   return xticks;
 }
 
-int
+uint64
 sys_sigreturn(void)
 {
+  *myproc()->trapframe = myproc()->regs;
   myproc()->alarmActive = 0;
-  memmove(myproc()->trapframe, myproc()->regs, PGSIZE);
-  kfree(myproc()->regs);
-  return 0;
+  return myproc()->trapframe->a0;
 }
 
-int
+uint64
 sys_sigalarm(void)
 {
-  argint(0, &(myproc()->interval));
-  argaddr(1, &(myproc()->funcPtr));
-  myproc()->deltaT = myproc()->ticks;
+  int interval;
+  uint64 handlerAddr;
+  argint(0, &interval);
+  argaddr(1, &handlerAddr);
+
+  if (interval == 0 && handlerAddr == 0)
+  {
+    myproc()->handler = (void (*)()) -1;
+    return 0;
+  }
+
+  myproc()->alarmInterval = interval;
+  myproc()->handler = (void(*)()) handlerAddr;
+  myproc()->tickCounter = 0;
   return 0;
 }

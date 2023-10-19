@@ -140,10 +140,9 @@ struct proc {
   struct file *ofile[NOFILE];  // Open files
   struct inode *cwd;           // Current directory
   char name[16];               // Process name (debugging)
-  int interval;                // interval of alarm
-  int ticks;                   // ticks of alarm
-  int deltaT;                  // time between last call
-  uint64 funcPtr;              // ptr to function handler
-  struct trapframe *regs;      // all regs that need to be saved
-  int alarmActive;             // bool if active 1 if not 0
+  int alarmInterval;           // param for sigalarm
+  void (*handler)();           // param for sigalarm
+  int tickCounter;             // tick counter for sigalarm
+  struct trapframe regs;       // saved process state during sigalarm
+  int alarmActive;             // 1 alarm On 0 alarm of
 };
