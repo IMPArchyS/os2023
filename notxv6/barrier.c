@@ -25,12 +25,20 @@ barrier_init(void)
 static void 
 barrier()
 {
-  // YOUR CODE HERE
-  //
-  // Block until all threads have called barrier() and
-  // then increment bstate.round.
-  //
-  
+  // lock so only 1 thread can execute the code
+  pthread_mutex_lock(&bstate.barrier_mutex);
+  if (bstate.nthread < nthread) { // did all threads reach barrier?
+    // put the current thread to sleep and release the lock
+    pthread_cond_wait(&bstate.barrier_cond, &bstate.barrier_mutex); 
+  } else { // all threads are synchronized
+    // wake every sleeping thread
+    pthread_cond_broadcast(&bstate.barrier_cond); 
+    // add that another synchro round starts and reset nthread
+    bstate.round++;
+    bstate.nthread = 0;
+  }
+  // release the lock so other threads can acquire 
+  pthread_mutex_unlock(&bstate.barrier_mutex);
 }
 
 static void *

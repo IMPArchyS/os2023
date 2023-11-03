@@ -1,0 +1,1 @@
+Lebo ked insertuje viac jadier do jedneho bucketu tak tak ostatne stratia modifikaciu k bucket headeru
