@@ -23,6 +23,10 @@ struct {
   struct run *freelist;
 } kmem;
 
+// ref count for phys. mem page
+int refCount[PHYSTOP / PGSIZE];
+struct spinlock refCountLock;
+
 void
 kinit()
 {
@@ -51,7 +55,16 @@ kfree(void *pa)
   if(((uint64)pa % PGSIZE) != 0 || (char*)pa < end || (uint64)pa >= PHYSTOP)
     panic("kfree");
 
-  // Fill with junk to catch dangling refs.
+  int temp;
+  acquire(&refCountLock);
+  // decrease ref count, if ref count isnt 0 return
+  refCount[(uint64) pa / PGSIZE]--;
+  temp = refCount[(uint64) pa / PGSIZE];
+  release(&refCountLock);
+  
+  if (temp > 0) 
+    return;
+  // fill with junk to catch dangling refs.
   memset(pa, 1, PGSIZE);
 
   r = (struct run*)pa;
@@ -72,8 +85,14 @@ kalloc(void)
 
   acquire(&kmem.lock);
   r = kmem.freelist;
-  if(r)
+  if(r) 
+  {
     kmem.freelist = r->next;
+    acquire(&refCountLock);
+    // init ref count to 1
+    refCount[(uint64) r / PGSIZE] = 1;
+    release(&refCountLock);
+  }
   release(&kmem.lock);
 
   if(r)

@@ -5,6 +5,11 @@
 #include "riscv.h"
 #include "defs.h"
 #include "fs.h"
+#include "spinlock.h"
+#include "proc.h"
+
+extern int refCount[PHYSTOP / PGSIZE];
+extern struct spinlock refCountLock;
 
 /*
  * the kernel's page table.
@@ -315,7 +320,6 @@ uvmcopy(pagetable_t old, pagetable_t new, uint64 sz)
   pte_t *pte;
   uint64 pa, i;
   uint flags;
-  char *mem;
 
   for(i = 0; i < sz; i += PGSIZE){
     if((pte = walk(old, i, 0)) == 0)
@@ -323,12 +327,20 @@ uvmcopy(pagetable_t old, pagetable_t new, uint64 sz)
     if((*pte & PTE_V) == 0)
       panic("uvmcopy: page not present");
     pa = PTE2PA(*pte);
+
+    if (*pte & PTE_W) {
+      *pte &= ~PTE_W;
+      *pte |= PTE_COW;
+    }
+
+    acquire(&refCountLock);
+    refCount[pa / PGSIZE]++;
+    release(&refCountLock);
     flags = PTE_FLAGS(*pte);
-    if((mem = kalloc()) == 0)
+    /*if((mem = kalloc()) == 0)
       goto err;
-    memmove(mem, (char*)pa, PGSIZE);
-    if(mappages(new, i, PGSIZE, (uint64)mem, flags) != 0){
-      kfree(mem);
+    memmove(mem, (char*)pa, PGSIZE);*/
+    if(mappages(new, i, PGSIZE, (uint64)pa, flags) != 0){
       goto err;
     }
   }
@@ -337,6 +349,43 @@ uvmcopy(pagetable_t old, pagetable_t new, uint64 sz)
  err:
   uvmunmap(new, 0, i / PGSIZE, 1);
   return -1;
+}
+
+int checkcowpage(uint64 va, pte_t *pte, struct proc* p) 
+{
+  // va should blow the size of process memory (bytes) 
+  return (va < p->sz) && (*pte & PTE_V) && (*pte & PTE_COW); 
+}
+
+
+int uvmcow(pagetable_t pagetable, uint64 va) 
+{
+  char *mem;
+  if (va >= MAXVA)
+    return -1;
+  pte_t *pte = walk(pagetable, va, 0);
+  if (pte == 0)
+    return -1;
+  // check the PTE
+  if ((*pte & PTE_COW) == 0 || (*pte & PTE_U) == 0 || (*pte & PTE_V) == 0) {
+    return -1;
+  }
+  if ((mem = kalloc()) == 0) {
+    return -1;
+  }
+  // old physical address
+  uint64 pa = PTE2PA(*pte);
+  // copy old data to new mem
+  memmove((char*)mem, (char*)pa, PGSIZE);
+  // PAY ATTENTION
+  // decrease the reference count of old memory page, because a new page has been allocated
+  kfree((void*)pa);
+  uint flags = PTE_FLAGS(*pte);
+  // set PTE_W to 1, change the address pointed to by PTE to new memory page(mem)
+  *pte = (PA2PTE(mem) | flags | PTE_W);
+  // set PTE_RSW to 0
+  *pte &= ~PTE_COW;
+  return 0;
 }
 
 // mark a PTE invalid for user access.
@@ -363,13 +412,29 @@ copyout(pagetable_t pagetable, uint64 dstva, char *src, uint64 len)
 
   while(len > 0){
     va0 = PGROUNDDOWN(dstva);
-    if(va0 >= MAXVA)
+    pa0 = walkaddr(pagetable, va0);
+    if (pa0 == 0 || va0 == 0)
       return -1;
+    
     pte = walk(pagetable, va0, 0);
-    if(pte == 0 || (*pte & PTE_V) == 0 || (*pte & PTE_U) == 0 ||
-       (*pte & PTE_W) == 0)
-      return -1;
-    pa0 = PTE2PA(*pte);
+    if (*pte == 0)
+      myproc()->killed = 1;
+
+    if (checkcowpage(va0, pte, myproc()))
+    {
+      char* mem;
+      if ((mem = kalloc()) == 0)
+        myproc()->killed = 1;
+      else 
+      {
+        memmove(mem, (char *) pa0, PGSIZE);
+        uint flags = PTE_FLAGS(*pte);
+        uvmunmap(pagetable, va0, 1, 1);
+        *pte = (PA2PTE(mem) | flags | PTE_W);
+        *pte &= ~PTE_COW;
+        pa0 = (uint64) mem;
+      }
+    }
     n = PGSIZE - (dstva - va0);
     if(n > len)
       n = len;
