@@ -69,13 +69,36 @@ sys_sleep(void)
   return 0;
 }
 
-
 #ifdef LAB_PGTBL
 int
 sys_pgaccess(void)
 {
-  // lab pgtbl: your code here.
-  return 0;
+  uint64 start, bitMaskAddr, bitMaskKernel = 0;
+  int npages;
+
+  argaddr(0, &start);
+  argint(1, &npages);
+  argaddr(2, &bitMaskAddr);
+
+  for (int i = 0; i < npages; i++) 
+  {
+    pte_t *pte = walk(myproc()->pagetable, start, 0);
+
+    if (pte == 0)
+      panic("page doesn't exist.");
+
+    if (*pte & PTE_A)
+    {
+      bitMaskKernel |=  1 << i;
+      *pte &= ~PTE_A;
+    }
+    start += PGSIZE;
+  }
+  
+  if (copyout(myproc()->pagetable, bitMaskAddr, (char *)&bitMaskKernel, sizeof(bitMaskKernel)) != 0) 
+    return -1;
+  else 
+    return 0;
 }
 #endif
 
