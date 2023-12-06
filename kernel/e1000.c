@@ -20,6 +20,7 @@ static struct mbuf *rx_mbufs[RX_RING_SIZE];
 static volatile uint32 *regs;
 
 struct spinlock e1000_lock;
+struct spinlock e1000rx_lock;
 
 // called by pci_init().
 // xregs is the memory address at which the
@@ -30,6 +31,7 @@ e1000_init(uint32 *xregs)
   int i;
 
   initlock(&e1000_lock, "e1000");
+  initlock(&e1000rx_lock, "e1000rx");
 
   regs = xregs;
 
@@ -95,26 +97,62 @@ e1000_init(uint32 *xregs)
 int
 e1000_transmit(struct mbuf *m)
 {
-  //
-  // Your code here.
-  //
-  // the mbuf contains an ethernet frame; program it into
-  // the TX descriptor ring so that the e1000 sends it. Stash
-  // a pointer so that it can be freed after sending.
-  //
-  
+  acquire(&e1000_lock);
+
+  uint32 tail = regs[E1000_TDT];
+  // check for ring overflow & if transmition is finished
+  if ((E1000_TXD_STAT_DD & tx_ring[tail].status) == 0)
+  {
+    release(&e1000_lock);
+    return -1;
+  }
+  // if full clear buffer
+  if (tx_mbufs[tail] != 0)
+    mbuffree(tx_mbufs[tail]);
+
+  // fill descriptor, set cmd flags & safe ptr to buffer
+  tx_ring[tail].cmd = (E1000_TXD_CMD_EOP | E1000_TXD_CMD_RS);
+  tx_ring[tail].addr = (uint64) m->head;
+  tx_ring[tail].length = m->len;
+  tx_mbufs[tail] = m;
+
+  // update ring position 
+  regs[E1000_TDT] = (tail + 1) % TX_RING_SIZE;
+
+  release(&e1000_lock);
+
   return 0;
 }
 
 static void
 e1000_recv(void)
 {
-  //
-  // Your code here.
-  //
-  // Check for packets that have arrived from the e1000
-  // Create and deliver an mbuf for each packet (using net_rx()).
-  //
+  acquire(&e1000rx_lock);
+  
+  // get index of ring if it exists continue
+  uint32 index = (regs[E1000_RDT] + 1) % RX_RING_SIZE;
+  while ((E1000_RXD_STAT_DD & rx_ring[index].status) != 0) 
+  {
+    // set mbuf->len to size at ring index & send packet
+    rx_mbufs[index]->len = rx_ring[index].length;
+    net_rx(rx_mbufs[index]);
+    // alocate a new mbuf
+    rx_mbufs[index] = mbufalloc(0);
+
+    // if cannot be allocated panic
+    if (rx_mbufs[index] == 0)
+      panic("e1000");
+
+    // set ptr to head in descriptor and set status to 0
+    rx_ring[index].addr = (uint64) rx_mbufs[index]->head;
+    rx_ring[index].status = 0;
+    // set value of reg E1000_RDT to index
+    regs[E1000_RDT] = index;
+    // get next ring index and repeat
+    index = (regs[E1000_RDT] + 1) % RX_RING_SIZE;
+  }
+
+  release(&e1000rx_lock);
 }
 
 void
