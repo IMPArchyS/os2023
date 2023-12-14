@@ -503,3 +503,111 @@ sys_pipe(void)
   }
   return 0;
 }
+
+uint64
+sys_mmap(void)
+{
+  int sz;
+  argint(0, &sz);
+
+  int prot;
+  argint(1, &prot);
+
+  int flags;
+  argint(2, &flags);
+
+  int fd;
+  argint(3, &fd);
+
+  int offset = 0;
+
+  // check if valid args
+  if (sz <= 0 || (prot & PROT_NONE) || (flags & MAP_SHARED && flags & MAP_PRIVATE) || (fd <= 0) || (!flags))
+    return -1;
+
+  if ((flags & MAP_SHARED) && !myproc()->ofile[fd]->writable && (prot & PROT_WRITE)) 
+    return -1;
+
+
+  // find free vma and setup it
+  struct vma *vmaPtr = 0;
+  for (int i = 0; i < MAXVMA; i++)
+  {
+    if (myproc()->vma[i].used == 0)
+    {
+      vmaPtr = &myproc()->vma[i];
+      break;
+    }
+  }
+  // check if a free vma was found
+  if (vmaPtr == 0)
+    return -1;
+
+  vmaPtr->used = 1;
+  vmaPtr->start = myproc()->vmaEnd;
+  vmaPtr->sz = PGROUNDUP(sz);
+  vmaPtr->prot = prot;
+  vmaPtr->flags = flags;
+  vmaPtr->offset = offset;
+
+  // assign file 
+  filedup(myproc()->ofile[fd]);
+  vmaPtr->file = myproc()->ofile[fd];
+
+  myproc()->vmaEnd += vmaPtr->sz;
+
+  return vmaPtr->start;
+}
+
+uint64
+sys_munmap(void)
+{
+  uint64 addr;
+  argaddr(0, &addr);
+
+  int sz;
+  argint(1, &sz);
+  
+  if (addr <= 0 || sz <= 0)
+    return -1;
+
+  addr = PGROUNDDOWN(addr);
+  sz = PGROUNDUP(sz);
+
+  // find vma with addr and used
+  struct vma* vmaPtr = 0;
+  for (int i = 0; i < MAXVMA; i++)
+  {
+    if (myproc()->vma[i].used == 1 && myproc()->vma[i].start == addr)
+    {
+      vmaPtr =&myproc()->vma[i];
+      break;
+    }
+  }
+  if (vmaPtr == 0)
+    return -1;
+
+  if ((vmaPtr->flags & MAP_SHARED) && (vmaPtr->prot & PROT_WRITE))
+    filewrite(vmaPtr->file, addr, sz);
+  
+  pte_t* pte = walk(myproc()->pagetable, addr, 0);
+  if (*pte & PTE_V) 
+    uvmunmap(myproc()->pagetable, addr, sz/PGSIZE, 1);
+
+  if (addr == vmaPtr->start)
+  {
+    vmaPtr->start += sz;
+    vmaPtr->sz -= sz; 
+  }
+  else 
+  {
+    vmaPtr->sz -= sz;
+  }
+
+  if (vmaPtr->sz == 0)
+  {
+    fileclose(vmaPtr->file);
+    memset(vmaPtr, 0, sizeof(struct vma));
+  }
+  return 0;
+}

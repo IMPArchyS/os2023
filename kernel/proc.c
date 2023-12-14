@@ -146,6 +146,15 @@ found:
   p->context.ra = (uint64)forkret;
   p->context.sp = p->kstack + PGSIZE;
 
+  // VMA setup
+  for (int i = 0; i < MAXVMA; i++)
+  {
+    struct vma *vmaPtr = (struct vma*) kalloc();
+    memset(vmaPtr, 0, sizeof(struct vma));
+    p->vma[i] = *vmaPtr;
+  }
+  p->vmaEnd = STARTVMA;
+
   return p;
 }
 
@@ -308,6 +317,15 @@ fork(void)
       np->ofile[i] = filedup(p->ofile[i]);
   np->cwd = idup(p->cwd);
 
+  // vma 
+  np->vmaEnd = p->vmaEnd;
+  for (int i = 0; i < MAXVMA; i++)
+  {
+    np->vma[i] = p->vma[i];
+    if (np->vma[i].used == 1)
+      filedup(np->vma[i].file);
+  }
+  
   safestrcpy(np->name, p->name, sizeof(p->name));
 
   pid = np->pid;
@@ -359,7 +377,20 @@ exit(int status)
       p->ofile[fd] = 0;
     }
   }
-
+  // vma
+  for (int i = 0; i < MAXVMA; i++)
+  {
+    pte_t* pte = walk(p->pagetable, p->vma[i].start, 0);
+    if (p->vma[i].used == 1 && *pte & PTE_V)
+      uvmunmap(p->pagetable, p->vma[i].start, p->vma[i].sz / PGSIZE, 0);
+    
+    if (p->vma[i].used == 1)
+    {
+      fileclose(p->vma[i].file);
+      memset(&p->vma[i], 0, sizeof(struct vma));
+    }
+  }
+  
   begin_op();
   iput(p->cwd);
   end_op();
