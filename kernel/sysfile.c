@@ -340,7 +340,51 @@ sys_open(void)
     end_op();
     return -1;
   }
+  // for symlinks that have follow enabled (O_NOFOLLOW not set), we want to open target
+  // links can link to themselves so maxdepth prohibits that
+  // if final target found jump out of while and continue
+  if (ip->type == T_SYMLINK && !(omode & O_NOFOLLOW))
+  {
+    int depth = 10;
 
+    while (depth > 0 && ip->type == T_SYMLINK)
+    {
+      // read ip content and write it to path of length ip->size
+      int n = readi(ip, 0, (uint64)path, 0, ip->size);
+      // if count of chars is not the same, readi failed
+      if (n != ip->size)
+      {
+        iunlockput(ip);
+        end_op();
+        return -1;
+      }
+
+      iunlockput(ip);
+      //find new inode
+      ip = namei(path);
+      // inode doesnt exist on path
+      if (!ip)
+      {
+        end_op();
+        return -1;
+      }
+
+      // if next inode exists, lock it
+      ilock(ip);
+      depth--;  
+      // continue in loop until reach final target or depth    
+    }
+    // after exiting loop check why
+    // if cause was max depth, unlock ip, end_op and  return -1
+    if (depth == 0) 
+    {
+      iunlockput(ip);
+      end_op();
+      return -1;
+    }
+    // else continue at opening file
+  }
+  // below is code that will continue to open file
   if((f = filealloc()) == 0 || (fd = fdalloc(f)) < 0){
     if(f)
       fileclose(f);
@@ -501,5 +545,41 @@ sys_pipe(void)
     fileclose(wf);
     return -1;
   }
+  return 0;
+}
+
+uint64 sys_symlink(void)
+{
+  char target[MAXPATH];
+  int n =  argstr(0, target, MAXPATH);
+
+  char path[MAXPATH];
+  argstr(1, path, MAXPATH);
+  // check for valid args
+  if (n < 0 || (strlen(path) == 0))
+    return -1;
+  
+  // begin_op and end_up are used in systemcalls that manipulate filesystem
+  begin_op();
+
+  struct inode* inode = create(path, T_SYMLINK, 0, 0);
+  // if couldnt be created
+  if (!inode)
+  {
+    end_op();
+    return -1;
+  }
+
+  // store target path to this inode and save how many characters was written
+  // inode must be locked while write but is already locked from create
+  int m = writei(inode, 0, (uint64) target, 0, n);
+  if (m != n) // if not whole length will be written
+  {
+    end_op();
+    return -1;
+  }
+
+  iunlockput(inode);
+  end_op();
   return 0;
 }
